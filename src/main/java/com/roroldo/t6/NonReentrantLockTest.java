@@ -1,25 +1,86 @@
 package com.roroldo.t6;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.io.Serializable;
+import java.util.Queue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.AbstractQueuedLongSynchronizer;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 
 /**
- * 测试 NoReentrantLock
+ * 测试 NonReentrantLock
  * @author 落霞不孤
  */
-public class NoReentrantLockTest {
+@Slf4j(topic = "c.NonReentrantLockTest")
+public class NonReentrantLockTest {
+    private final static NonReentrantLock LOCK = new NonReentrantLock();
+    private final static Condition EMPTY = LOCK.newCondition();
+    private final static Condition FULL = LOCK.newCondition();
 
+    private final static Queue<String> QUEUE = new LinkedBlockingQueue<>();
+    private final static int CAPACITY = 10;
 
+    public static void main(String[] args) {
+        Thread product = new Thread(() -> {
+            // 获取独占锁
+            LOCK.lock();
+            try {
+                // 如果队列满了，则等待
+                while (QUEUE.size() == CAPACITY) {
+                    log.info(Thread.currentThread().getName() + "await...");
+                    FULL.await();
+                }
+                log.info(Thread.currentThread().getName() + " 生产 ele");
+                // 添加元素到队列
+                QUEUE.add("ele");
+                // 唤醒消费者
+                log.info(Thread.currentThread().getName() + " 唤醒所有的消费者");
+                EMPTY.signalAll();
+
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                // 释放锁
+                LOCK.unlock();
+            }
+
+        }, "product");
+
+        Thread customer = new Thread(() -> {
+            // 获取独占锁
+            LOCK.lock();
+            try {
+                // 如果队列为空，则等待
+                while (QUEUE.size() == 0) {
+                    log.info(Thread.currentThread().getName() + " await...");
+                    EMPTY.await();
+                }
+                // 移除元素
+                String str = QUEUE.poll();
+                log.info(Thread.currentThread().getName() + " 消费 " + str);
+                // 唤醒生产者
+                log.info(Thread.currentThread().getName() + " 唤醒所有的生产者");
+                FULL.signalAll();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                LOCK.unlock();
+            }
+        }, "customer1");
+
+        customer.start();
+        product.start();
+    }
 }
 
 
 /**
  * 基于 AQS 实现不可重入的独占锁
  */
-class NoReentrantLock implements Lock, Serializable {
+class NonReentrantLock implements Lock, Serializable {
 
     // 辅助同步器
     static class MySync extends AbstractQueuedLongSynchronizer {
